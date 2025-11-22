@@ -125,6 +125,8 @@ class SoftDecisionTree(nn.Module):
         self.forward(current_node.children[1], inputs, (1 - prob) * path_prob)
 
 
+
+    # this effectively gets r_theta
     def get_loss(self):
         loss = 0
         class_reward = torch.tensor(self.class_reward).float().to(self.device)
@@ -158,12 +160,64 @@ class SoftDecisionTree(nn.Module):
         # print("final traj reward",final_traj_reward)
         return final_traj_reward
 
+
+
+
+def Richardson_Srikumar_Sabhahwal_Loss(r_theta, target):
+
+    r_theta, target = r_theta.to("cpu"), target.to("cpu")
+
+
+    # the tree outputs the r_theta for each leaf and the target is just a value 0 or 1, so grabbing the target
+    # 0 or 1 will give the index of the reward we want to be higher
+    isGood_pos = torch.sigmoid(r_theta[0, target.item()])
+    isGood_neg = torch.sigmoid(r_theta[0, target.item() - 1])
+
+    loss = torch.max(torch.tensor([0]), torch.log(isGood_pos) - torch.log(isGood_neg))
+
+    return loss
+
+
+"""
+This is the One True Constraint. It enforces a disjunction between the trajectory's rewards and is
+implemented with the product t-norm disjunction
+"""
+def One_True_Loss(r_theta, target):
+    r_theta, target = r_theta.to("cpu"), target.to("cpu")
+
+    isGood_pos = torch.sigmoid(r_theta[0, target.item()])
+    isGood_neg = torch.sigmoid(r_theta[0, target.item() - 1])
+
+
+    loss = -1 * torch.log(isGood_pos + isGood_neg - (isGood_pos * isGood_neg))
+    return loss
+
+def RSS_OT_Loss(r_theta, target, inclusion_factor=1):
+
+    RSS = Richardson_Srikumar_Sabhahwal_Loss(r_theta, target)
+    OT  = One_True_Loss(r_theta, target)
+
+
+
+    return inclusion_factor * RSS + inclusion_factor * OT
+
+
+
+
 def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0,ES_patience=15,lr_scheduler=None):
 
     early_stopping = EarlyStopping(patience=ES_patience, min_delta=0)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(device)
-    loss_criterion = nn.CrossEntropyLoss()
+    # print(device)
+    # loss_criterion = nn.CrossEntropyLoss()
+
+    # loss_criterion = Richardson_Srikumar_Sabhahwal_Loss
+    loss_criterion = RSS_OT_Loss
+
+
+
+
+
     ddt = ddt.to(device)
 
     for epoch in range(num_epochs):
@@ -183,6 +237,7 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
             loss_tree = ddt.get_loss()
             loss_tree = loss_tree.reshape(len(pref_demo),len(pref_demo[0]), len(pref_demo[0][0]))
             loss_tree_traj = torch.sum(loss_tree, dim=2)
+
 
             pred_label = torch.argmax(loss_tree_traj, dim=1)
             # print(f"pred label is {pred_label} and pref label is {pref_label}")
@@ -273,7 +328,9 @@ if __name__== '__main__':
     class_reward_vector = [0, 1]
     nb_classes = len(class_reward_vector)
     tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed)
-    lr=0.001
+
+    # will need to tune this
+    lr=0.0001
     weight_decay=0.000
 
     optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
