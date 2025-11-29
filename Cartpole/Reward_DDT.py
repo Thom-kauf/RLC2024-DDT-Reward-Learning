@@ -124,23 +124,28 @@ class SoftDecisionTree(nn.Module):
         # Right children -> prob = 1 - activation
         self.forward(current_node.children[1], inputs, (1 - prob) * path_prob)
 
-
-
     # this effectively gets r_theta
     def get_loss(self):
         loss = 0
         class_reward = torch.tensor(self.class_reward).float().to(self.device)
         class_reward = torch.unsqueeze(class_reward, dim=0)
-        loss_tree = 0
-        #         print("no nof leaves", len(self.leaves))
+
+        max_prob = -1
+        max_prob_leaf = None
+
         for leaf in self.leaves:
-            Q = (leaf.forward()).float().to(self.device)
-            loss_l = torch.inner(class_reward, Q)
-            loss = torch.sum((loss_l * leaf.path_prob),dim=1)
-            loss_tree += loss
-        #     print("loss of a tree", loss)
-        # print(" final loss of a tree", loss_tree)
-        return loss_tree
+            if leaf.path_prob > max_prob:
+                max_prob = leaf.path_prob
+                max_prob_leaf = leaf
+
+
+        Q = (max_prob_leaf.forward()).float().to(self.device)
+        loss_l = torch.inner(class_reward, Q)
+
+        # loss = r_theta * path_prob
+        loss = torch.sum((loss_l * max_prob),dim=1)
+
+        return loss
 
     def fwd_input(self, input_traj):
         traj_reward = 0
@@ -163,45 +168,62 @@ class SoftDecisionTree(nn.Module):
 
 
 
-def Richardson_Srikumar_Sabhahwal_Loss(r_theta, target):
+def Richardson_Srikumar_Sabhahwal_Loss(r_theta, target, scaling_factor=100_000):
 
     r_theta, target = r_theta.to("cpu"), target.to("cpu")
 
 
     # the tree outputs the r_theta for each leaf and the target is just a value 0 or 1, so grabbing the target
-    # 0 or 1 will give the index of the reward we want to be higher
+    # 0 or 1 will give the index of the reward we want to be
     isGood_pos = torch.sigmoid(r_theta[0, target.item()])
     isGood_neg = torch.sigmoid(r_theta[0, target.item() - 1])
 
-    loss = torch.max(torch.tensor([0]), torch.log(isGood_pos) - torch.log(isGood_neg))
 
-    return loss
+    loss = torch.max(torch.tensor([0]), torch.log(isGood_neg) - torch.log(isGood_pos))
+
+
+
+    return loss * scaling_factor
 
 
 """
 This is the One True Constraint. It enforces a disjunction between the trajectory's rewards and is
 implemented with the product t-norm disjunction
 """
-def One_True_Loss(r_theta, target):
+def One_True_Loss(r_theta, target, inclusion_factor=10_000_000):
     r_theta, target = r_theta.to("cpu"), target.to("cpu")
 
     isGood_pos = torch.sigmoid(r_theta[0, target.item()])
     isGood_neg = torch.sigmoid(r_theta[0, target.item() - 1])
 
-
+    # print(f"is good pos is {isGood_pos} and is good neg is {isGood_neg}")
     loss = -1 * torch.log(isGood_pos + isGood_neg - (isGood_pos * isGood_neg))
+
+    return loss * inclusion_factor
+
+def RSS_OT_Loss(r_theta, target, inclusion_factor_rss=1_000_000, inclusion_factor_ot=100):
+
+    RSS = Richardson_Srikumar_Sabhahwal_Loss(r_theta, target, scaling_factor=inclusion_factor_rss)
+    OT  = One_True_Loss(r_theta, target, inclusion_factor=inclusion_factor_ot)
+
+    loss = RSS + OT
+    # print(f"Pos reward from r_theta is {r_theta[0, target.item()]}, and the sigmoid is: {isGood_pos} and neg reward is {r_theta[0, target.item()- 1] } and sigmoid is: {isGood_neg}")
+
+    # print(f"RSS is {RSS} and OT is {OT} and total loss is {loss}")
+    # print(f"reward of neg: {r_theta[0, target.item() - 1]}  and pos {r_theta[0, target.item()]} gives loss {loss}")
+
     return loss
 
-def RSS_OT_Loss(r_theta, target, inclusion_factor=1):
+def BT_RSS_Loss(r_theta, target, RSS_factor=1, BT_factor=1):
 
-    RSS = Richardson_Srikumar_Sabhahwal_Loss(r_theta, target)
-    OT  = One_True_Loss(r_theta, target)
+    BT_loss = nn.CrossEntropyLoss()
+    bt_loss = BT_loss(r_theta, target).to("cpu")
 
-
-
-    return inclusion_factor * RSS + inclusion_factor * OT
+    RSS = Richardson_Srikumar_Sabhahwal_Loss(r_theta, target, scaling_factor=RSS_factor)
 
 
+   # print(f"RSS is {RSS} and with factor is { RSS * RSS_factor}and BT loss is {bt_loss}")
+    return  RSS + BT_factor * bt_loss
 
 
 def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0,ES_patience=15,lr_scheduler=None):
@@ -212,13 +234,17 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
     # loss_criterion = nn.CrossEntropyLoss()
 
     # loss_criterion = Richardson_Srikumar_Sabhahwal_Loss
-    loss_criterion = RSS_OT_Loss
+    # loss_criterion = RSS_OT_Loss
 
+    loss_criterion = BT_RSS_Loss
 
+    # loss_criterion = Richardson_Srikumar_Sabhahwal_Loss
 
-
+    # loss_criterion = One_True_Loss
 
     ddt = ddt.to(device)
+
+    global_step = 0
 
     for epoch in range(num_epochs):
         acc_counter = 0
@@ -242,8 +268,17 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
             pred_label = torch.argmax(loss_tree_traj, dim=1)
             # print(f"pred label is {pred_label} and pref label is {pref_label}")
             acc_counter += torch.sum((pred_label == pref_label).float())
-            final_loss = loss_criterion(loss_tree_traj, pref_label)
+            final_loss = loss_criterion(loss_tree_traj, pref_label)#, RSS_factor=1e3, BT_factor=1)
+
+            # print(f"Pos reward from r_theta is {loss_tree_traj[0, pref_label.item()]} and neg reward is {loss_tree_traj[0, pref_label.item()] - 1}")
+            # print(f"final loss is {final_loss.item()}")
+
             losses.append(final_loss.detach().cpu().numpy())
+
+            writer.add_scalar('Training Loss per step', final_loss.detach().cpu().numpy(), global_step)
+            global_step += 1
+
+
 
             final_loss.backward()
             optimizer.step()
@@ -271,7 +306,9 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
 
                 val_pred_label = torch.argmax(val_loss_tree_traj, dim=1)
                 val_acc_counter += torch.sum((val_pred_label == val_pref_label).float())
+
                 val_final_loss = loss_criterion(val_loss_tree_traj, val_pref_label)
+                
                 val_losses.append(val_final_loss.detach().cpu().numpy())
 
 
@@ -324,13 +361,17 @@ if __name__== '__main__':
 
     save_config=True
     input_dim = 1 * 2
+
+
+
+    # to tune
     depth = 2
-    class_reward_vector = [0, 1]
+    class_reward_vector = [0, 1]#0.01]
     nb_classes = len(class_reward_vector)
     tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed)
 
     # will need to tune this
-    lr=0.0001
+    lr=0.001
     weight_decay=0.000
 
     optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
@@ -364,5 +405,5 @@ if __name__== '__main__':
         with open(path, "w") as f:
             yaml.dump(config, f)
 
-    train(tree, train_dl, optimizer, val_dl, num_epochs=50, save_model_dir=save_model_dir, exp_no=Exp_name,
+    train(tree, train_dl, optimizer, val_dl, num_epochs=20, save_model_dir=save_model_dir, exp_no=Exp_name,
           ES_patience=10, lr_scheduler=None)

@@ -26,7 +26,8 @@ parser = argparse.ArgumentParser(description=None)
 parser.add_argument('--soft_routing_argmax',default=1,help="If 0 then it soft routes if it's 1 then it does argmax")
 parser.add_argument('--RL_seed', default=0, help="RL/PPO seed for experiments")
 parser.add_argument('--exp_no', default="XX", help="which experiment number are you on")
-parser.add_argument('--save_model_dir', default="/home/ak/Documents/Clean_Cartpole_DDT/RL_using_Reward_Models/DDT/saved_models/", help="where to save trained model")
+# Cartpole/RL_using_Trained_Reward_Models
+parser.add_argument('--save_model_dir', default="./RL_using_Reward_Models/DDT/saved_models/", help="where to save trained model")
 parser.add_argument('--pth', default="RL_using_Reward_Models/DDT/TB/", help="path where tensorboard events are stored")
 
 args = parser.parse_args()
