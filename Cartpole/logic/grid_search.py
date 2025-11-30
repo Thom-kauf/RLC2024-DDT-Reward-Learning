@@ -1,20 +1,36 @@
-def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0,ES_patience=15,lr_scheduler=None):
+import torch
+import random
+import torch.nn as nn
+import numpy as np
+import os
+import matplotlib.pylab as plt
+from collections import defaultdict
+from torch.utils.data import TensorDataset,DataLoader
+from torch.utils.tensorboard import SummaryWriter
+import torch.optim as optim
+import yaml
+from Utils import EarlyStopping
+
+from Reward_DDT import SoftDecisionTree
+from Reward_Losses import Richardson_Srikumar_Sabhahwal_Loss, RSS_OT_Loss, BT_RSS_Loss, One_True_Loss   
+
+seed=0
+torch.manual_seed(seed)
+random.seed(seed)
+np.random.seed(seed)
+print(f"seed is {seed}")
+
+def train(ddt,train_dl, optimizer,val_dl, inclusion_factors,  num_epochs,save_model_dir='.',exp_no=0,ES_patience=15,lr_scheduler=None, 
+          loss_criterion=nn.CrossEntropyLoss()):
 
     early_stopping = EarlyStopping(patience=ES_patience, min_delta=0)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # print(device)
-    # loss_criterion = nn.CrossEntropyLoss()
-
-    # loss_criterion = Richardson_Srikumar_Sabhahwal_Loss
-    # loss_criterion = RSS_OT_Loss
-
-    loss_criterion = BT_RSS_Loss
-
-    # loss_criterion = Richardson_Srikumar_Sabhahwal_Loss
-
-    # loss_criterion = One_True_Loss
-
     ddt = ddt.to(device)
+
+    RSS_factor, BT_factor, OT_factor = inclusion_factors
+
+
 
     global_step = 0
 
@@ -22,10 +38,8 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
         acc_counter = 0
         losses = []
 
-        if lr_scheduler!=None:
-            print(f"-----------Epoch{epoch} and lr is {lr_scheduler.get_last_lr()}  ---------------")
-        else:
-            print(f"-----------Epoch{epoch}---------------")
+        print(f"-----------Epoch{epoch}---------------")
+
         for pref_demo, pref_label in train_dl:
             optimizer.zero_grad()
             pref_label = pref_label.to(device)
@@ -38,12 +52,15 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
 
 
             pred_label = torch.argmax(loss_tree_traj, dim=1)
-            # print(f"pred label is {pred_label} and pref label is {pref_label}")
             acc_counter += torch.sum((pred_label == pref_label).float())
+
+
+
+            if loss_criterion == BT_RSS_Loss:
+                final_loss = loss_criterion(loss_tree_traj, pref_label, RSS_factor=RSS_factor, BT_factor=BT_factor)
+
             final_loss = loss_criterion(loss_tree_traj, pref_label)#, RSS_factor=1e3, BT_factor=1)
 
-            # print(f"Pos reward from r_theta is {loss_tree_traj[0, pref_label.item()]} and neg reward is {loss_tree_traj[0, pref_label.item()] - 1}")
-            # print(f"final loss is {final_loss.item()}")
 
             losses.append(final_loss.detach().cpu().numpy())
 
@@ -134,48 +151,63 @@ if __name__== '__main__':
     save_config=True
     input_dim = 1 * 2
 
+    lrs = [1e-2, 1e-3, 1e-4]
+    inclusion_factors = {
+        'RSS_factor': [1e0, 1e1, 1e2, 1e3, 1e4, 1e5],
+        'BT_factor': [1e-3, 1e-2, 1e-1, 1e0, 1e1],
+        'OT_factor': [1e0, 1e1, 1e2, 1e3, 1e4, 1e5],
+    }
+    for RSS_factor in inclusion_factors['RSS_factor']:
+        for BT_factor in inclusion_factors['BT_factor']:
+            for OT_factor in inclusion_factors['OT_factor']:
+                inclusion_factors_tuple = (RSS_factor, BT_factor, OT_factor)
+                print(f"Training with inclusion factors: RSS={RSS_factor}, BT={BT_factor}, OT={OT_factor}")
 
+    loss_fns = [nn.CrossEntropyLoss, BT_RSS_Loss, RSS_OT_Loss]
 
-    # to tune
-    depth = 2
-    class_reward_vector = [0, 1]#0.01]
-    nb_classes = len(class_reward_vector)
-    tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed)
+    
 
-    # will need to tune this
-    lr=0.001
-    weight_decay=0.000
+    for asdfasdf:
+        # to tune
+        depth = 2
+        class_reward_vector = [0, 1]#0.01]
+        nb_classes = len(class_reward_vector)
+        tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed)
 
-    optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
-    Exp_name = 'CP-DDT-1'
-    current_directory = os.getcwd()
-    save_model_dir = current_directory +'/Reward_Models/DDT/saved_models/'
-    tensorboard_path = current_directory +'/Reward_Models/DDT/TB/' + Exp_name
+        # will need to tune this
+        lr=0.001
+        weight_decay=0.000
 
-    writer = SummaryWriter(tensorboard_path)
-    if not os.path.exists(save_model_dir):
-        print(' Creating Project : ' + save_model_dir)
-        os.makedirs(save_model_dir)
+        optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
+        Exp_name = 'CP-DDT-1'
+        current_directory = os.getcwd()
+        save_model_dir = current_directory +'/Reward_Models/DDT/saved_models/'
+        tensorboard_path = current_directory +'/Reward_Models/DDT/TB/' + Exp_name
 
-    if save_config:
-        config=dict()
-        config['seed'] = seed
-        config['input_dim'] = input_dim
-        config['depth'] = depth
-        config['class_reward_vector'] = class_reward_vector
-        config['lr'] = lr
-        config['weight_decay'] = weight_decay
-        config[' num_train_prefs'] = num_train_prefs
-        config['train_dl_len']=train_dl_len
-        config['val_dl_len']=val_dl_len
+        writer = SummaryWriter(tensorboard_path)
+        if not os.path.exists(save_model_dir):
+            print(' Creating Project : ' + save_model_dir)
+            os.makedirs(save_model_dir)
 
-        save_config_dir = current_directory +'/Reward_Models/DDT/configs/'
-        if not os.path.exists(save_config_dir):
-            print('Creating Project : ' + save_config_dir)
-            os.makedirs(save_config_dir)
-        path = save_config_dir + Exp_name + "_config.yaml"
-        with open(path, "w") as f:
-            yaml.dump(config, f)
+        if save_config:
+            config=dict()
+            config['seed'] = seed
+            config['input_dim'] = input_dim
+            config['depth'] = depth
+            config['class_reward_vector'] = class_reward_vector
+            config['lr'] = lr
+            config['weight_decay'] = weight_decay
+            config[' num_train_prefs'] = num_train_prefs
+            config['train_dl_len']=train_dl_len
+            config['val_dl_len']=val_dl_len
 
-    train(tree, train_dl, optimizer, val_dl, num_epochs=20, save_model_dir=save_model_dir, exp_no=Exp_name,
-          ES_patience=10, lr_scheduler=None)
+            save_config_dir = current_directory +'/Reward_Models/DDT/configs/'
+            if not os.path.exists(save_config_dir):
+                print('Creating Project : ' + save_config_dir)
+                os.makedirs(save_config_dir)
+            path = save_config_dir + Exp_name + "_config.yaml"
+            with open(path, "w") as f:
+                yaml.dump(config, f)
+
+        train(tree, train_dl, optimizer, val_dl, num_epochs=20, save_model_dir=save_model_dir, exp_no=Exp_name,
+            ES_patience=10, lr_scheduler=None)
