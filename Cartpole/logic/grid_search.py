@@ -12,7 +12,7 @@ import yaml
 from Utils import EarlyStopping
 
 from Reward_DDT import SoftDecisionTree
-from Reward_Losses import Richardson_Srikumar_Sabhahwal_Loss, RSS_OT_Loss, BT_RSS_Loss, One_True_Loss   
+from Reward_Losses import *   
 
 seed=0
 torch.manual_seed(seed)
@@ -20,17 +20,15 @@ random.seed(seed)
 np.random.seed(seed)
 print(f"seed is {seed}")
 
-def train(ddt,train_dl, optimizer,val_dl, inclusion_factors,  num_epochs,save_model_dir='.',exp_no=0,ES_patience=15,lr_scheduler=None, 
-          loss_criterion=nn.CrossEntropyLoss()):
+def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, num_epochs, save_model_dir='.', exp_no=0, ES_patience=15, lr_scheduler=None):
 
     early_stopping = EarlyStopping(patience=ES_patience, min_delta=0)
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # print(device)
+    
+    rss_factor, ot_factor, bt_factor = inclusion_factors
+
     ddt = ddt.to(device)
-
-    RSS_factor, BT_factor, OT_factor = inclusion_factors
-
-
 
     global_step = 0
 
@@ -43,24 +41,25 @@ def train(ddt,train_dl, optimizer,val_dl, inclusion_factors,  num_epochs,save_mo
         for pref_demo, pref_label in train_dl:
             optimizer.zero_grad()
             pref_label = pref_label.to(device)
+
             pref_demo_train = pref_demo.view(len(pref_demo)*len(pref_demo[0])*len(pref_demo[0][0]),2).float().to(device)
+
             ones = torch.ones((len(pref_demo_train), 1)).float().to(device)
+
             ddt.forward(ddt.root, pref_demo_train, ones)
+
             loss_tree = ddt.get_loss()
+
             loss_tree = loss_tree.reshape(len(pref_demo),len(pref_demo[0]), len(pref_demo[0][0]))
             loss_tree_traj = torch.sum(loss_tree, dim=2)
 
-
             pred_label = torch.argmax(loss_tree_traj, dim=1)
+            # print(f"pred label is {pred_label} and pref label is {pref_label}")
             acc_counter += torch.sum((pred_label == pref_label).float())
+            final_loss = loss_criterion(loss_tree_traj, pref_label, RSS_factor=rss_factor, OT_factor=ot_factor, BT_factor=bt_factor)
 
-
-
-            if loss_criterion == BT_RSS_Loss:
-                final_loss = loss_criterion(loss_tree_traj, pref_label, RSS_factor=RSS_factor, BT_factor=BT_factor)
-
-            final_loss = loss_criterion(loss_tree_traj, pref_label)#, RSS_factor=1e3, BT_factor=1)
-
+            # print(f"Pos reward from r_theta is {loss_tree_traj[0, pref_label.item()]} and neg reward is {loss_tree_traj[0, pref_label.item()] - 1}")
+            # print(f"final loss is {final_loss.item()}")
 
             losses.append(final_loss.detach().cpu().numpy())
 
@@ -89,14 +88,16 @@ def train(ddt,train_dl, optimizer,val_dl, inclusion_factors,  num_epochs,save_mo
                 val_pref_demo_train = val_pref_demo.view(len(val_pref_demo)*len(val_pref_demo[0]) * len(val_pref_demo[0][0]), 2).float().to(device)
                 val_ones = torch.ones((len(val_pref_demo_train), 1)).float().to(device)
                 ddt.forward(ddt.root, val_pref_demo_train, val_ones)
+                
                 val_loss_tree = ddt.get_loss()
+
                 val_loss_tree = val_loss_tree.reshape(len(val_pref_demo), len(val_pref_demo[0]), len(val_pref_demo[0][0]))
                 val_loss_tree_traj = torch.sum(val_loss_tree, dim=2)
 
                 val_pred_label = torch.argmax(val_loss_tree_traj, dim=1)
                 val_acc_counter += torch.sum((val_pred_label == val_pref_label).float())
 
-                val_final_loss = loss_criterion(val_loss_tree_traj, val_pref_label)
+                val_final_loss = loss_criterion(val_loss_tree_traj, val_pref_label, RSS_factor=rss_factor, OT_factor=ot_factor, BT_factor=bt_factor)
                 
                 val_losses.append(val_final_loss.detach().cpu().numpy())
 
@@ -151,32 +152,52 @@ if __name__== '__main__':
     save_config=True
     input_dim = 1 * 2
 
-    lrs = [1e-2, 1e-3, 1e-4]
+    lrs = [1e-2, 1e-3, 1e-4] # 3
     inclusion_factors = {
-        'RSS_factor': [1e0, 1e1, 1e2, 1e3, 1e4, 1e5],
-        'BT_factor': [1e-3, 1e-2, 1e-1, 1e0, 1e1],
-        'OT_factor': [1e0, 1e1, 1e2, 1e3, 1e4, 1e5],
+        'RSS_factor': [0, 1e6, 1e7], # 3
+        'BT_factor': [0, 1e0, 1e1], # 3
+        'OT_factor': [0, 1e6, 1e7], # 3
     }
+    
+    reward_strategies = ["soft", "hard"] # 2
+    loss_fns = [BT_OT_RSS_Loss] # 1
+    
+    hyperparameters_grid = []
+    
     for RSS_factor in inclusion_factors['RSS_factor']:
         for BT_factor in inclusion_factors['BT_factor']:
             for OT_factor in inclusion_factors['OT_factor']:
-                inclusion_factors_tuple = (RSS_factor, BT_factor, OT_factor)
-                print(f"Training with inclusion factors: RSS={RSS_factor}, BT={BT_factor}, OT={OT_factor}")
+                for loss_fn in loss_fns:
+                    for reward_strategy in reward_strategies:
+                        for lr in lrs:
+                            hyperparameters_grid.append({
+                                'RSS_factor': RSS_factor,
+                                'BT_factor': BT_factor,
+                                'OT_factor': OT_factor,
+                                'loss_fn': loss_fn,
+                                'reward_strategy': reward_strategy,
+                                'lr': lr
+                            })
+                
 
-    loss_fns = [nn.CrossEntropyLoss, BT_RSS_Loss, RSS_OT_Loss]
-
+    print(f"Total hyperparameter combinations to try: {len(hyperparameters_grid)}")
     
-
-    for asdfasdf:
+    # constant parameters
+    depth = 2
+    class_reward_vector = [0, 0.25]
+    nb_classes = len(class_reward_vector)
+    weight_decay=0.0
+    num_epochs = 10
+    
+    for hyperparameters in hyperparameters_grid:
+        
+        lr = hyperparameters['lr']
+        reward_strat = hyperparameters['reward_strategy']
+        loss_criterion = hyperparameters['loss_fn']
+        factors = (hyperparameters['RSS_factor'], hyperparameters['OT_factor'], hyperparameters['BT_factor'])
+        
         # to tune
-        depth = 2
-        class_reward_vector = [0, 1]#0.01]
-        nb_classes = len(class_reward_vector)
-        tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed)
-
-        # will need to tune this
-        lr=0.001
-        weight_decay=0.000
+        tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed, reward_strategy=reward_strat)
 
         optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
         Exp_name = 'CP-DDT-1'
@@ -209,5 +230,5 @@ if __name__== '__main__':
             with open(path, "w") as f:
                 yaml.dump(config, f)
 
-        train(tree, train_dl, optimizer, val_dl, num_epochs=20, save_model_dir=save_model_dir, exp_no=Exp_name,
+        train(tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, save_model_dir=save_model_dir, exp_no=Exp_name,
             ES_patience=10, lr_scheduler=None)
