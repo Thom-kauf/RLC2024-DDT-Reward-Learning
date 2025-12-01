@@ -1,0 +1,15 @@
+BT_factor: 0
+OT_factor: 0
+RSS_factor: 1000000.0
+best_val_acc: 50.0
+class_reward_vector:
+- 0
+- 0.25
+depth: 2
+input_dim: 2
+lr: 0.01
+model_path: /home/tomtom/RLC2024-DDT-Reward-Learning/Cartpole/Reward_Models/DDT/saved_models/BEST_RSS_hard.pth
+reward_strategy: hard
+seed: 0
+source_exp_name: Strat_hard_RSS_1e+06_OT_0e+00_BT_0e+00_LR_1e-02
+weight_decay: 0.0

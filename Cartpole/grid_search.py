@@ -3,307 +3,290 @@ import random
 import torch.nn as nn
 import numpy as np
 import os
-import matplotlib.pylab as plt
-from collections import defaultdict
-from torch.utils.data import TensorDataset,DataLoader
+import shutil 
+import yaml
+from torch.utils.data import TensorDataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import torch.optim as optim
-import yaml
 from Utils import EarlyStopping
-
 from Reward_DDT import SoftDecisionTree
-from logic.Reward_Losses import *   
-
+from logic.Reward_Losses import * 
 seed=0
 torch.manual_seed(seed)
 random.seed(seed)
 np.random.seed(seed)
 print(f"seed is {seed}")
 
-def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, num_epochs, save_model_dir='.', exp_no=0, ES_patience=15, lr_scheduler=None):
-
+def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, num_epochs, save_model_dir='.', exp_no='0', ES_patience=15, lr_scheduler=None):
     early_stopping = EarlyStopping(patience=ES_patience, min_delta=0)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    # print(device)
     
     rss_factor, ot_factor, bt_factor = inclusion_factors
-
     ddt = ddt.to(device)
 
-    global_step = 0
+    # Track best accuracy *within this specific run*
+    best_run_val_acc = 0.0
+    best_epoch = -1
 
     for epoch in range(num_epochs):
         acc_counter = 0
         losses = []
-
-        print(f"-----------Epoch{epoch}---------------")
-
+        
+        # print(f"-----------Epoch{epoch}---------------")
+        
+        # Training loop
         for pref_demo, pref_label in train_dl:
             optimizer.zero_grad()
             pref_label = pref_label.to(device)
-
             pref_demo_train = pref_demo.view(len(pref_demo)*len(pref_demo[0])*len(pref_demo[0][0]),2).float().to(device)
-
             ones = torch.ones((len(pref_demo_train), 1)).float().to(device)
-
+            
             ddt.forward(ddt.root, pref_demo_train, ones)
-
             loss_tree = ddt.get_loss()
-
             loss_tree = loss_tree.reshape(len(pref_demo),len(pref_demo[0]), len(pref_demo[0][0]))
             loss_tree_traj = torch.sum(loss_tree, dim=2)
-
+            
             pred_label = torch.argmax(loss_tree_traj, dim=1)
-            # print(f"pred label is {pred_label} and pref label is {pref_label}")
             acc_counter += torch.sum((pred_label == pref_label).float())
             final_loss = loss_criterion(loss_tree_traj, pref_label, RSS_factor=rss_factor, OT_factor=ot_factor, BT_factor=bt_factor)
-
-            # print(f"Pos reward from r_theta is {loss_tree_traj[0, pref_label.item()]} and neg reward is {loss_tree_traj[0, pref_label.item()] - 1}")
-            # print(f"final loss is {final_loss.item()}")
-
             losses.append(final_loss.detach().cpu().numpy())
-
-            writer.add_scalar('Training Loss per step', final_loss.detach().cpu().numpy(), global_step)
-            global_step += 1
-
-
-
+            
             final_loss.backward()
             optimizer.step()
+        
         if lr_scheduler is not None:
             lr_scheduler.step()
+            
         training_loss_per_epoch = np.mean(losses)
-        print("Training Loss per epoch", training_loss_per_epoch)
-        training_acc_per_epoch = acc_counter / (len(train_dl)*len(pref_demo)) * 100
-        print(" Training Accuracy per epoch", training_acc_per_epoch)
-        writer.add_scalar('Training Loss per epoch', training_loss_per_epoch, epoch)
-        writer.add_scalar(' Training Accuracy per epoch', training_acc_per_epoch, epoch)
-
+        # print("Training Loss per epoch", training_loss_per_epoch)
+        
+        # Validation Loop
         with torch.no_grad():
             val_acc_counter = 0
             val_losses = []
             for val_pref_demo, val_pref_label in val_dl:
-
                 val_pref_label = val_pref_label.to(device)
                 val_pref_demo_train = val_pref_demo.view(len(val_pref_demo)*len(val_pref_demo[0]) * len(val_pref_demo[0][0]), 2).float().to(device)
                 val_ones = torch.ones((len(val_pref_demo_train), 1)).float().to(device)
                 ddt.forward(ddt.root, val_pref_demo_train, val_ones)
                 
-                val_loss_tree = ddt.get_loss()
-
-                val_loss_tree = val_loss_tree.reshape(len(val_pref_demo), len(val_pref_demo[0]), len(val_pref_demo[0][0]))
-                val_loss_tree_traj = torch.sum(val_loss_tree, dim=2)
-
-                val_pred_label = torch.argmax(val_loss_tree_traj, dim=1)
-                val_acc_counter += torch.sum((val_pred_label == val_pref_label).float())
-
-                val_final_loss = loss_criterion(val_loss_tree_traj, val_pref_label, RSS_factor=rss_factor, OT_factor=ot_factor, BT_factor=bt_factor)
+                loss_tree = ddt.get_loss()
+                loss_tree = loss_tree.reshape(len(val_pref_demo), len(val_pref_demo[0]), len(val_pref_demo[0][0]))
+                loss_tree_traj = torch.sum(loss_tree, dim=2)
                 
+                val_pred_label = torch.argmax(loss_tree_traj, dim=1)
+                val_acc_counter += torch.sum((val_pred_label == val_pref_label).float())
+                val_final_loss = loss_criterion(loss_tree_traj, val_pref_label, RSS_factor=rss_factor, OT_factor=ot_factor, BT_factor=bt_factor)
                 val_losses.append(val_final_loss.detach().cpu().numpy())
 
-
             val_loss_per_epoch = np.mean(val_losses)
-            print("Val Loss per epoch", val_loss_per_epoch)
             val_acc_per_epoch = val_acc_counter / (len(val_dl)*len(val_pref_demo)) * 100
-            print("VAL Accuracy per epoch", val_acc_per_epoch)
-            writer.add_scalar('Val Loss per epoch', val_loss_per_epoch, epoch)
-            writer.add_scalar('Val Accuracy per epoch', val_acc_per_epoch, epoch)
-            '''use this for ReduceLRonPlateau- NOT USING IT RIGHT NOW'''
-            # if lr_scheduler is not None:
-            #     scheduler.step(val_loss_per_epoch)
+            
+            # print("Val Loss per epoch", val_loss_per_epoch)
+            # print("VAL Accuracy per epoch", val_acc_per_epoch)
+
+            # --- CRITICAL LOGIC: Save Temp Model ---
+            # If this epoch is the best for this specific run, save it to a temp file
+            if val_acc_per_epoch > best_run_val_acc:
+                best_run_val_acc = val_acc_per_epoch
+                best_epoch = epoch
+                # Ensure directory exists
+                if not os.path.exists(save_model_dir):
+                    os.makedirs(save_model_dir)
+                
+                temp_path = os.path.join(save_model_dir, f"TEMP_{exp_no}.pth")
+                torch.save(ddt.state_dict(), temp_path)
+            # -------------------------------------
+
             early_stopping(val_loss_per_epoch)
             if early_stopping.early_stop:
-                print("We are at epoch:", epoch)
-                torch.save(ddt, save_model_dir + exp_no + "_" + str(epoch))
+                print("Early stopping at epoch:", epoch)
                 break
-    if early_stopping.early_stop:
-        pass
-    elif not early_stopping.early_stop:
-        torch.save(ddt, save_model_dir + exp_no + "_" + str(num_epochs))
-        print(f"no of epochs are {num_epochs}")
+    
+    return best_run_val_acc.item(), best_epoch
+
 
 if __name__== '__main__':
 
-    '''prep data'''
+    # --- DATA PREP (RESTORED) ---
     num_prefs= 2200
     traj_snippet_len=20
     pref_dataset_path='Pref_Dataset_num_prefs_'+str(num_prefs)+'_traj_snippet_len_'+str(traj_snippet_len)
+    
     pref_dataset=torch.load(pref_dataset_path)
     pref_demos=pref_dataset['pref_demos']
     pref_labels=pref_dataset['pref_labels']
     assert len(pref_demos) == len(pref_labels) == num_prefs
-    num_train_prefs=1
-
+    
+    # Your slice indices
+    num_train_prefs= 100
+    # Note: You had num_train_prefs=1 and val slice [num_train_prefs:3]
+    # This implies only 2 val items. Ensure this is intentional.
+    
     train_pref_demos=pref_demos[:num_train_prefs]
     train_pref_labels=pref_labels[:num_train_prefs]
 
-    val_pref_demos=pref_demos[num_train_prefs:3]
-    val_pref_labels=pref_labels[num_train_prefs:3]
+    val_pref_demos=pref_demos[num_train_prefs:120]
+    val_pref_labels=pref_labels[num_train_prefs:120]
 
     train_dataset = TensorDataset(torch.stack(train_pref_demos),torch.tensor(train_pref_labels))
     train_dl = DataLoader(train_dataset, batch_size=1, shuffle=False)
 
     val_datset = TensorDataset(torch.stack(val_pref_demos),torch.tensor(val_pref_labels))
     val_dl = DataLoader(val_datset, batch_size=1, shuffle=False)
-
+    
     val_dl_len=len(val_dl)
     train_dl_len=len(train_dl)
 
-    save_config=True
+
     input_dim = 1 * 2
 
-    lrs = [1e-2, 1e-3, 1e-4] # 3
+    # Hyperparameters
+    lrs = [1e-2, 1e-3, 1e-4] 
     inclusion_factors = {
-        'RSS_factor': [0, 1e6, 1e7], # 3
-        'BT_factor': [0, 1e0, 1e1], # 3
-        'OT_factor': [0, 1e6, 1e7], # 3
+        'RSS_factor': [0, 1e6, 1e7], 
+        'BT_factor': [0, 1e0, 1e1], 
+        'OT_factor': [0, 1e6, 1e7], 
     }
     
-    reward_strategies = ["soft", "hard"] # 2
-    loss_fns = [BT_OT_RSS_Loss] # 1
-    
+    reward_strategies = ["soft", "hard"] 
+
     hyperparameters_grid = []
-    
     for RSS_factor in inclusion_factors['RSS_factor']:
         for BT_factor in inclusion_factors['BT_factor']:
             for OT_factor in inclusion_factors['OT_factor']:
-                for loss_fn in loss_fns:
-                    for reward_strategy in reward_strategies:
-                        for lr in lrs:
-                            hyperparameters_grid.append({
-                                'RSS_factor': RSS_factor,
-                                'BT_factor': BT_factor,
-                                'OT_factor': OT_factor,
-                                'loss_fn': loss_fn,
-                                'reward_strategy': reward_strategy,
-                                'lr': lr
-                            })
-                
-
+                for reward_strategy in reward_strategies:
+                    for lr in lrs:
+                        hyperparameters_grid.append({
+                            'RSS_factor': RSS_factor, 'BT_factor': BT_factor, 'OT_factor': OT_factor,
+                            'reward_strategy': reward_strategy, 'lr': lr
+                        })
+            
     print(f"Total hyperparameter combinations to try: {len(hyperparameters_grid)}")
     
-    # constant parameters
+    # Constant parameters
     depth = 2
     class_reward_vector = [0, 0.25]
     nb_classes = len(class_reward_vector)
     weight_decay=0.0
-    num_epochs = 1
+    num_epochs = 1 
+
+    # --- STEP 1: INITIALIZE DICTIONARY CORRECTLY (14 KEYS) ---
+    # We create unique keys for every Loss Type + Reward Strategy combo
+    best_acc_dict = {}
+    loss_types = ["RSS", "OT", "BT", "RSS_OT", "RSS_BT", "OT_BT", "RSS_OT_BT"]
+    strategies = ["hard", "soft"]
     
-    best_acc_dict = {
-            "RSS_model" : 0,
-            "OT_model" : 0,
-            "BT_model" : 0,
-            "RSS_OT_model" : 0,
-            "RSS_BT_model" : 0,
-            "OT_BT_model" : 0,
-            "RSS_OT_BT_model" : 0
-        }
+    for l_type in loss_types:
+        for strat in strategies:
+            key_name = f"{l_type}_{strat}" # e.g., RSS_hard
+            best_acc_dict[key_name] = 0.0
 
-    best_hp_dict = {
-            "RSS_model" : None,
-            "OT_model" : None,
-            "BT_model" : None,
-            "RSS_OT_model" : None,
-            "RSS_BT_model" : None,
-            "OT_BT_model" : None,
-            "RSS_OT_BT_model" : None
-        }
+    print("Tracking the following Model Types:", list(best_acc_dict.keys()))
 
-
+    # --- MAIN LOOP ---
     for hyperparameters in hyperparameters_grid:
         
         lr = hyperparameters['lr']
         reward_strat = hyperparameters['reward_strategy']
-        loss_criterion = hyperparameters['loss_fn']
-        factors = (hyperparameters['RSS_factor'], hyperparameters['OT_factor'], hyperparameters['BT_factor'])
+        loss_criterion = BT_OT_RSS_Loss
+        rss, ot, bt = (hyperparameters['RSS_factor'], hyperparameters['OT_factor'], hyperparameters['BT_factor'])
+        factors = (rss, ot, bt)
+
+        if rss == 0 and ot == 0 and bt == 0:
+            print("Skipping all-zero factors")
+            continue
+
+        # Setup Paths
+        current_directory = os.getcwd() + '/logic/'
+        base_save_dir = os.path.join(current_directory, 'Reward_Models', 'DDT')
+        save_model_dir = os.path.join(base_save_dir, 'saved_models')
+        save_config_dir = os.path.join(base_save_dir, 'configs')
         
-        # to tune
-        tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed, reward_strategy=reward_strat)
+        os.makedirs(save_model_dir, exist_ok=True)
+        os.makedirs(save_config_dir, exist_ok=True)
 
-        optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
-        Exp_name = 'CP-DDT-1'
-        current_directory = os.getcwd()
-        save_model_dir = current_directory +'/Reward_Models/DDT/saved_models/'
-        tensorboard_path = current_directory +'/Reward_Models/DDT/TB/' + Exp_name
-
+        # Unique ID for this specific run
+        Exp_name = f"Strat_{reward_strat}_RSS_{rss:.0e}_OT_{ot:.0e}_BT_{bt:.0e}_LR_{lr:.0e}"
+        tensorboard_path = os.path.join(base_save_dir, 'TB', Exp_name)
         writer = SummaryWriter(tensorboard_path)
-        if not os.path.exists(save_model_dir):
-            print(' Creating Project : ' + save_model_dir)
-            os.makedirs(save_model_dir)
 
+        # Init Model
+        tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector, seed=seed, reward_strategy=reward_strat)
+        optimizer = optim.Adam(tree.parameters(), lr=lr, weight_decay=weight_decay)
 
-        if save_config:
-            config=dict()
-            config['seed'] = seed
-            config['input_dim'] = input_dim
-            config['depth'] = depth
-            config['class_reward_vector'] = class_reward_vector
-            config['lr'] = lr
-            config['weight_decay'] = weight_decay
-            config[' num_train_prefs'] = num_train_prefs
-            config['train_dl_len']=train_dl_len
-            config['val_dl_len']=val_dl_len
-            
+        print(f"\n--- Running: {Exp_name} ---")
 
-            save_config_dir = current_directory +'/Reward_Models/DDT/configs/'
-            if not os.path.exists(save_config_dir):
-                print('Creating Project : ' + save_config_dir)
-                os.makedirs(save_config_dir)
-            path = save_config_dir + Exp_name + "_config.yaml"
-            with open(path, "w") as f:
-                yaml.dump(config, f)
-
-
-        val_acc = train(tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, save_model_dir=save_model_dir, exp_no=Exp_name,
-            ES_patience=10, lr_scheduler=None)
+        # --- RUN TRAINING ---
+        # The function saves a file named "TEMP_{Exp_name}.pth" when it finds a local best
+        val_acc, best_epoch = train(tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, 
+                        save_model_dir=save_model_dir, exp_no=Exp_name, ES_patience=10)
         
-
-        if hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] == 0 and hyperparameters['BT_factor'] == 0:
-            
-            if val_acc > best_acc_dict["RSS_model"]:
-                best_acc_dict["RSS_model"] = val_acc
-                best_hp_dict["RSS_model"] = hyperparameters
-                
-        elif hyperparameters['RSS_factor'] == 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] == 0:
-            
-            if val_acc > best_acc_dict["OT_model"]:
-                best_acc_dict["OT_model"] = val_acc
-                best_hp_dict["OT_model"] = hyperparameters
-                
-        elif hyperparameters['RSS_factor'] == 0 and hyperparameters['OT_factor'] == 0 and hyperparameters['BT_factor'] > 0:
-            
-            if val_acc > best_acc_dict["BT_model"]:
-                best_acc_dict["BT_model"] = val_acc
-                best_hp_dict["BT_model"] = hyperparameters
+        # --- STEP 2: DETERMINE BASE MODEL TYPE ---
+        base_type = ""
+        if rss > 0 and ot == 0 and bt == 0: base_type = "RSS"
+        elif rss == 0 and ot > 0 and bt == 0: base_type = "OT"
+        elif rss == 0 and ot == 0 and bt > 0: base_type = "BT"
+        elif rss > 0 and ot > 0 and bt == 0: base_type = "RSS_OT"
+        elif rss > 0 and ot == 0 and bt > 0: base_type = "RSS_BT"
+        elif rss == 0 and ot > 0 and bt > 0: base_type = "OT_BT"
+        elif rss > 0 and ot > 0 and bt > 0: base_type = "RSS_OT_BT"
         
-        elif hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] == 0:
-            
-            if val_acc > best_acc_dict["RSS_OT_model"]:
-                best_acc_dict["RSS_OT_model"] = val_acc
-                best_hp_dict["RSS_OT_model"] = hyperparameters
-                
-        elif hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] == 0 and hyperparameters['BT_factor'] > 0:
-            
-            if val_acc > best_acc_dict["RSS_BT_model"]:
-                best_acc_dict["RSS_BT_model"] = val_acc
-                best_hp_dict["RSS_BT_model"] = hyperparameters
-                
-        elif hyperparameters['RSS_factor'] == 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] > 0:
-            
-            if val_acc > best_acc_dict["OT_BT_model"]:
-                best_acc_dict["OT_BT_model"] = val_acc
-                best_hp_dict["OT_BT_model"] = hyperparameters
-                
-        elif hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] > 0:
-            
-            if val_acc > best_acc_dict["RSS_OT_BT_model"]:
-                best_acc_dict["RSS_OT_BT_model"] = val_acc
-                best_hp_dict["RSS_OT_BT_model"] = hyperparameters
-                
+        # --- STEP 3: COMBINE WITH STRATEGY FOR KEY ---
+        # This creates keys like "RSS_hard" and "RSS_soft"
+        # This ensures we save a best model for hard AND a best model for soft
+        model_key = f"{base_type}_{reward_strat}" 
 
-
-        if save_config:
-            config = config | best_acc_dict | best_hp_dict
+        # --- STEP 4: COMPARE AND FINALIZE SAVE ---
+        if val_acc > best_acc_dict[model_key]:
+            best_acc_dict[model_key] = val_acc
             
-    print("Best Accuracies for different inclusion factor combinations:")
+            # Prepare Config Data
+            final_config = {
+                'seed': seed,
+                'input_dim': input_dim,
+                'depth': depth,
+                'class_reward_vector': class_reward_vector,
+                'lr': lr,
+                'weight_decay': weight_decay,
+                'RSS_factor': rss,
+                'OT_factor': ot,
+                'BT_factor': bt,
+                'reward_strategy': reward_strat,
+                'best_val_acc': val_acc,
+                'source_exp_name': Exp_name,
+                'best_epoch': best_epoch
+            }
+
+            # 1. Rename the Temp Model to Final Model
+            temp_model_path = os.path.join(save_model_dir, f"TEMP_{Exp_name}.pth")
+            final_model_name = f"BEST_{model_key}.pth" # e.g. BEST_RSS_hard.pth
+            final_model_path = os.path.join(save_model_dir, final_model_name)
+            
+            # Use move/rename
+            if os.path.exists(temp_model_path):
+                # If a previous best file exists, this will overwrite it, which is what we want
+                shutil.move(temp_model_path, final_model_path)
+                final_config['model_path'] = final_model_path
+            else:
+                print(f"Warning: Temp model file not found at {temp_model_path}")
+
+            # 2. Save the Config immediately
+            config_filename = f"BEST_{model_key}_config.yaml"
+            # Create specific subfolder if desired, or dump in main config dir
+            config_path = os.path.join(save_config_dir, config_filename)
+            
+            with open(config_path, "w") as f:
+                yaml.dump(final_config, f)
+            
+            print(f"Saved Config: {config_filename}")
+            print(f"Saved Model: {final_model_name}")
+        
+        else:
+            # Clean up temp file if it wasn't the global best for this category
+            temp_model_path = os.path.join(save_model_dir, f"TEMP_{Exp_name}.pth")
+            if os.path.exists(temp_model_path):
+                os.remove(temp_model_path)
+
+    print("\nFinal Best Accuracies:")
     print(best_acc_dict)

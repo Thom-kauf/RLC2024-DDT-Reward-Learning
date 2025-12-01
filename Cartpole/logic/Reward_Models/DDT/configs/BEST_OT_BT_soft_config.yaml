@@ -1,0 +1,16 @@
+BT_factor: 1.0
+OT_factor: 1000000.0
+RSS_factor: 0
+best_epoch: 0
+best_val_acc: 75.0
+class_reward_vector:
+- 0
+- 0.25
+depth: 2
+input_dim: 2
+lr: 0.001
+model_path: /home/tomtom/RLC2024-DDT-Reward-Learning/Cartpole/logic/Reward_Models/DDT/saved_models/BEST_OT_BT_soft.pth
+reward_strategy: soft
+seed: 0
+source_exp_name: Strat_soft_RSS_0e+00_OT_1e+06_BT_1e+00_LR_1e-03
+weight_decay: 0.0
