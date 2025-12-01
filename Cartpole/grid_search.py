@@ -119,15 +119,13 @@ if __name__== '__main__':
     assert len(pref_demos) == len(pref_labels) == num_prefs
     
     # Your slice indices
-    num_train_prefs= 100
-    # Note: You had num_train_prefs=1 and val slice [num_train_prefs:3]
-    # This implies only 2 val items. Ensure this is intentional.
+    num_train_prefs= 1#2000
     
     train_pref_demos=pref_demos[:num_train_prefs]
     train_pref_labels=pref_labels[:num_train_prefs]
 
-    val_pref_demos=pref_demos[num_train_prefs:120]
-    val_pref_labels=pref_labels[num_train_prefs:120]
+    val_pref_demos=pref_demos[num_train_prefs:2]
+    val_pref_labels=pref_labels[num_train_prefs:2]
 
     train_dataset = TensorDataset(torch.stack(train_pref_demos),torch.tensor(train_pref_labels))
     train_dl = DataLoader(train_dataset, batch_size=1, shuffle=False)
@@ -145,7 +143,7 @@ if __name__== '__main__':
     lrs = [1e-2, 1e-3, 1e-4] 
     inclusion_factors = {
         'RSS_factor': [0, 1e6, 1e7], 
-        'BT_factor': [0, 1e0, 1e1], 
+        'BT_factor': [0, 1e0], 
         'OT_factor': [0, 1e6, 1e7], 
     }
     
@@ -169,7 +167,7 @@ if __name__== '__main__':
     class_reward_vector = [0, 0.25]
     nb_classes = len(class_reward_vector)
     weight_decay=0.0
-    num_epochs = 1 
+    num_epochs = 1#5
 
     # --- STEP 1: INITIALIZE DICTIONARY CORRECTLY (14 KEYS) ---
     # We create unique keys for every Loss Type + Reward Strategy combo
