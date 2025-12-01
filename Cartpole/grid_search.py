@@ -12,7 +12,7 @@ import yaml
 from Utils import EarlyStopping
 
 from Reward_DDT import SoftDecisionTree
-from Reward_Losses import *   
+from logic.Reward_Losses import *   
 
 seed=0
 torch.manual_seed(seed)
@@ -125,20 +125,20 @@ def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, n
 if __name__== '__main__':
 
     '''prep data'''
-    num_prefs=2200
+    num_prefs= 2200
     traj_snippet_len=20
     pref_dataset_path='Pref_Dataset_num_prefs_'+str(num_prefs)+'_traj_snippet_len_'+str(traj_snippet_len)
     pref_dataset=torch.load(pref_dataset_path)
     pref_demos=pref_dataset['pref_demos']
     pref_labels=pref_dataset['pref_labels']
     assert len(pref_demos) == len(pref_labels) == num_prefs
-    num_train_prefs=2000
+    num_train_prefs=1
 
     train_pref_demos=pref_demos[:num_train_prefs]
     train_pref_labels=pref_labels[:num_train_prefs]
 
-    val_pref_demos=pref_demos[num_train_prefs:]
-    val_pref_labels=pref_labels[num_train_prefs:]
+    val_pref_demos=pref_demos[num_train_prefs:3]
+    val_pref_labels=pref_labels[num_train_prefs:3]
 
     train_dataset = TensorDataset(torch.stack(train_pref_demos),torch.tensor(train_pref_labels))
     train_dl = DataLoader(train_dataset, batch_size=1, shuffle=False)
@@ -187,8 +187,29 @@ if __name__== '__main__':
     class_reward_vector = [0, 0.25]
     nb_classes = len(class_reward_vector)
     weight_decay=0.0
-    num_epochs = 10
+    num_epochs = 1
     
+    best_acc_dict = {
+            "RSS_model" : 0,
+            "OT_model" : 0,
+            "BT_model" : 0,
+            "RSS_OT_model" : 0,
+            "RSS_BT_model" : 0,
+            "OT_BT_model" : 0,
+            "RSS_OT_BT_model" : 0
+        }
+
+    best_hp_dict = {
+            "RSS_model" : None,
+            "OT_model" : None,
+            "BT_model" : None,
+            "RSS_OT_model" : None,
+            "RSS_BT_model" : None,
+            "OT_BT_model" : None,
+            "RSS_OT_BT_model" : None
+        }
+
+
     for hyperparameters in hyperparameters_grid:
         
         lr = hyperparameters['lr']
@@ -210,6 +231,7 @@ if __name__== '__main__':
             print(' Creating Project : ' + save_model_dir)
             os.makedirs(save_model_dir)
 
+
         if save_config:
             config=dict()
             config['seed'] = seed
@@ -221,6 +243,7 @@ if __name__== '__main__':
             config[' num_train_prefs'] = num_train_prefs
             config['train_dl_len']=train_dl_len
             config['val_dl_len']=val_dl_len
+            
 
             save_config_dir = current_directory +'/Reward_Models/DDT/configs/'
             if not os.path.exists(save_config_dir):
@@ -230,5 +253,57 @@ if __name__== '__main__':
             with open(path, "w") as f:
                 yaml.dump(config, f)
 
-        train(tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, save_model_dir=save_model_dir, exp_no=Exp_name,
+
+        val_acc = train(tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, save_model_dir=save_model_dir, exp_no=Exp_name,
             ES_patience=10, lr_scheduler=None)
+        
+
+        if hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] == 0 and hyperparameters['BT_factor'] == 0:
+            
+            if val_acc > best_acc_dict["RSS_model"]:
+                best_acc_dict["RSS_model"] = val_acc
+                best_hp_dict["RSS_model"] = hyperparameters
+                
+        elif hyperparameters['RSS_factor'] == 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] == 0:
+            
+            if val_acc > best_acc_dict["OT_model"]:
+                best_acc_dict["OT_model"] = val_acc
+                best_hp_dict["OT_model"] = hyperparameters
+                
+        elif hyperparameters['RSS_factor'] == 0 and hyperparameters['OT_factor'] == 0 and hyperparameters['BT_factor'] > 0:
+            
+            if val_acc > best_acc_dict["BT_model"]:
+                best_acc_dict["BT_model"] = val_acc
+                best_hp_dict["BT_model"] = hyperparameters
+        
+        elif hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] == 0:
+            
+            if val_acc > best_acc_dict["RSS_OT_model"]:
+                best_acc_dict["RSS_OT_model"] = val_acc
+                best_hp_dict["RSS_OT_model"] = hyperparameters
+                
+        elif hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] == 0 and hyperparameters['BT_factor'] > 0:
+            
+            if val_acc > best_acc_dict["RSS_BT_model"]:
+                best_acc_dict["RSS_BT_model"] = val_acc
+                best_hp_dict["RSS_BT_model"] = hyperparameters
+                
+        elif hyperparameters['RSS_factor'] == 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] > 0:
+            
+            if val_acc > best_acc_dict["OT_BT_model"]:
+                best_acc_dict["OT_BT_model"] = val_acc
+                best_hp_dict["OT_BT_model"] = hyperparameters
+                
+        elif hyperparameters['RSS_factor'] > 0 and hyperparameters['OT_factor'] > 0 and hyperparameters['BT_factor'] > 0:
+            
+            if val_acc > best_acc_dict["RSS_OT_BT_model"]:
+                best_acc_dict["RSS_OT_BT_model"] = val_acc
+                best_hp_dict["RSS_OT_BT_model"] = hyperparameters
+                
+
+
+        if save_config:
+            config = config | best_acc_dict | best_hp_dict
+            
+    print("Best Accuracies for different inclusion factor combinations:")
+    print(best_acc_dict)
