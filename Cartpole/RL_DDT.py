@@ -25,18 +25,24 @@ register(
 parser = argparse.ArgumentParser(description=None)
 parser.add_argument('--soft_routing_argmax',default=1,help="If 0 then it soft routes if it's 1 then it does argmax")
 parser.add_argument('--RL_seed', default=0, help="RL/PPO seed for experiments")
-parser.add_argument('--exp_no', default="XX", help="which experiment number are you on")
 # Cartpole/RL_using_Trained_Reward_Models
-parser.add_argument('--save_model_dir', default="./RL_using_Reward_Models/DDT/saved_models/", help="where to save trained model")
-parser.add_argument('--pth', default="RL_using_Reward_Models/DDT/TB/", help="path where tensorboard events are stored")
+parser.add_argument('--model_name', default="", help="which model do you want? RSS, OT, BT etc")
+
 
 args = parser.parse_args()
 RL_seed = int(args.RL_seed)
-save_model_dir = args.save_model_dir
-Exp_name = args.exp_no
 soft_routing_argmax=int(args.soft_routing_argmax)
-tensorboard_pth = args.pth+Exp_name
 print(f"You are starting RL with setting parameter soft_routing_argmax {soft_routing_argmax} MAKE SURE RESULTS BELOW MATCH INTENDED VALUE")
+
+model_name = args.model_name
+dir = './logic/Reward_Models_3/DDT'
+# model_name = 'BEST_RSS_hard'
+model_path = dir + f'/saved_models/{model_name}.pth'
+
+save_model_dir = dir + f'/RL_Models/{model_name}/'
+
+tensorboard_pth = save_model_dir + 'tensorboard/'
+
 
 torch.manual_seed(RL_seed)
 random.seed(RL_seed)
@@ -207,7 +213,10 @@ class DDT_Reward(VecEnvWrapper):
         nb_classes = len(class_reward_vector)
         self.reward_net= SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector,seed=0)
         print(self.reward_net)
-        self.reward_net=torch.load(trained_DDT)
+        state_dict = torch.load(trained_DDT)
+
+        self.reward_net.load_state_dict(state_dict)
+
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.reward_net.to(self.device)
         self.soft_routing = soft_routing
@@ -245,14 +254,21 @@ if __name__=="__main__":
 
     env_id="FH-CartPole"
 
-    trained_DDT_path= 'Trained_Reward_Models/DDT/saved_models/CP-1_50'
-
     vec_env = make_vec_env(env_id, n_envs=5,seed=0)
-    env=reward_wrapping_env(vec_env,trained_DDT_path,soft_routing=soft_routing_argmax)
+    env=reward_wrapping_env(vec_env,model_path,soft_routing=soft_routing_argmax)
 
-    model = PPO("MlpPolicy", env, batch_size=1024, gae_lambda=0.8, gamma=0.98, learning_rate=0.001, n_epochs=20, n_steps=2048, verbose=1, seed=RL_seed, tensorboard_log=tensorboard_pth)
-    model.learn(total_timesteps=5e5,progress_bar=True)
-    model.save(save_model_dir + Exp_name)
+    model = PPO("MlpPolicy", env, batch_size=1024, gae_lambda=0.8, gamma=0.98, learning_rate=0.001, 
+                n_epochs=20, n_steps=2048, 
+                verbose=1, seed=RL_seed, tensorboard_log=tensorboard_pth)
+    model.learn(total_timesteps=1_000,progress_bar=True)
+
+    save_rl_model_dir = save_model_dir + "/model/"
+    if not os.path.exists(save_rl_model_dir):
+        print(' Creating  directory to save final RL model : ' + save_model_dir)
+        os.makedirs(save_rl_model_dir)
+
+
+    model.save(save_rl_model_dir + f"PPO_Cartpole_RL_using_{model_name}_softrouting{soft_routing_argmax}_seed{RL_seed}")
 
 
 

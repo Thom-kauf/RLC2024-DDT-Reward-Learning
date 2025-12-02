@@ -87,9 +87,14 @@ if __name__=="__main__":
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector,seed=0)
-        print(tree)
 
-        tree= torch.load('Trained_Reward_Models/DDT/saved_models/CP-1_50')
+        # tree= torch.load('Trained_Reward_Models/DDT/saved_models/CP-1_50')
+        # tree 
+        dir = './logic/Reward_Models_3/DDT'
+        model_name = 'BEST_RSS_hard'
+        model_path = dir + f'/saved_models/{model_name}.pth'
+        state_dict = torch.load(model_path, map_location=device)
+        tree.load_state_dict(state_dict)
         tree.eval()
 
         print(f"----------------------------LOADING TRAINED TREE ----------------------------------------------------------------------")
@@ -99,12 +104,11 @@ if __name__=="__main__":
 
         p0, p1, p2 = node_prob_matrix(tree)
         print(f"dim of the node prob matrix is {p0.shape}")
-        current_directory = os.getcwd()
-        '''uncomment to save'''
-        # save_fig_dir=  current_directory + '/Reward_Models/DDT/Vis/CP-1/'
-        # if not os.path.exists(save_fig_dir):
-        #     os.makedirs(save_fig_dir)
-        save_fig_dir=None
+
+        save_fig_dir=  dir + f'/vis/{model_name}/'
+        if not os.path.exists(save_fig_dir):
+            os.makedirs(save_fig_dir)
+
         plot_heatmap(p0,0,save_fig_dir=save_fig_dir)
         plot_heatmap(p1, 1,save_fig_dir=save_fig_dir)
         plot_heatmap(p2, 2, save_fig_dir=save_fig_dir)

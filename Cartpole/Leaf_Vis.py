@@ -32,12 +32,13 @@ def sep_nodes_leaves(node_names,node_prob,get_Q):
     return non_leaf_node_prob_dist, leaf_node_Q
 
 def plot_histogram(leaf_nodes_Q,save_leaf_dir):
+    print("Leaf node Q values:", leaf_nodes_Q)
     # prob = node_prob[0]
     plt.rcParams["figure.figsize"] = (4, 4)
     for k in leaf_nodes_Q.keys():
         b = leaf_nodes_Q[k].cpu().detach().numpy()
         b = b[0]
-        x = np.array(['0', '1'])
+        x = np.array(['0', '0.25'])
         plt.bar(x, b)
         # l_prime = k - 2
         c=np.argmax(b)
@@ -62,15 +63,17 @@ def plot_histogram(leaf_nodes_Q,save_leaf_dir):
 if __name__=="__main__":
     input_dim = 1 * 2
     depth = 2
-    class_reward_vector = [0, 1]
+    class_reward_vector = [0, 0.25]
     nb_classes = len(class_reward_vector)
     with torch.no_grad():
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector,seed=0)
-        tree = torch.load('Trained_Reward_Models/DDT/saved_models/CP-1_50')
-        print(tree)
-        # tree = tree.to(device)
+        dir = './logic/Reward_Models_3/DDT'
+        model_name = 'BEST_RSS_hard'
+        model_path = dir + f'/saved_models/{model_name}.pth'
+        state_dict = torch.load(model_path, map_location=device)
+        tree.load_state_dict(state_dict)
         tree.eval()
 
         print(
@@ -87,7 +90,8 @@ if __name__=="__main__":
         '''uncomment to save'''
         # current_directory = os.getcwd()
         # save_leaf_dir=  current_directory + '/Reward_Models/DDT/Vis/CP-1/'
-
+        save_leaf_dir=  dir + f'/vis/{model_name}/'
+        print(f"Saving leaf histograms to {save_leaf_dir}")
         n,l=sep_nodes_leaves(node_name,node_p,get_Q)
         print(l)
         plot_histogram(l,save_leaf_dir)
