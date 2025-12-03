@@ -205,7 +205,7 @@ if __name__== '__main__':
         os.makedirs(save_config_dir, exist_ok=True)
 
         # Unique ID for this specific run
-        Exp_name = f"Strat_{reward_strat}_RSS_{rss:.0e}_OT_{ot:.0e}_BT_{bt:.0e}_LR_{lr:.0e}"
+        Exp_name = f"Strat_{reward_strat}_RSS_{rss:.0e}_OT_{ot:.0e}_BT_{bt:.0e}_LR_{lr:.0e}_TrainPrefs_{num_train_prefs}"
         tensorboard_path = os.path.join(base_save_dir, 'TB', Exp_name)
         writer = SummaryWriter(tensorboard_path)
 
@@ -258,7 +258,7 @@ if __name__== '__main__':
 
             # 1. Rename the Temp Model to Final Model
             temp_model_path = os.path.join(save_model_dir, f"TEMP_{Exp_name}.pth")
-            final_model_name = f"BEST_{model_key}.pth" # e.g. BEST_RSS_hard.pth
+            final_model_name = f"BEST_{model_key}_{num_train_prefs}_train_prefs.pth" # e.g. BEST_RSS_hard.pth
             final_model_path = os.path.join(save_model_dir, final_model_name)
             
             # Use move/rename
@@ -270,7 +270,7 @@ if __name__== '__main__':
                 print(f"Warning: Temp model file not found at {temp_model_path}")
 
             # 2. Save the Config immediately
-            config_filename = f"BEST_{model_key}_config.yaml"
+            config_filename = f"BEST_{model_key}_{num_train_prefs}_train_prefs_config.yaml"
             # Create specific subfolder if desired, or dump in main config dir
             config_path = os.path.join(save_config_dir, config_filename)
             
