@@ -72,7 +72,7 @@ def visualize_trained_policy(model_name, soft_routing_argmax, rl_seed):
         steps = 0
         
         # Loop until the episode terminates or is truncated
-        while not done and not truncated and steps < max_steps_per_episode:
+        while not done and steps < max_steps_per_episode:
             # Predict the action (deterministic=True is standard for evaluation)
             action, _ = visual_model.predict(obs, deterministic=True)
             

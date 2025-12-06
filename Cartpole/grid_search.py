@@ -18,7 +18,8 @@ random.seed(seed)
 np.random.seed(seed)
 print(f"seed is {seed}")
 
-def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, num_epochs, base_model_dir = '.',save_model_dir='.', exp_no='0', ES_patience=15, lr_scheduler=None):
+def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, num_epochs, base_model_dir = '.',save_model_dir='.', exp_no='0', ES_patience=15, lr_scheduler=None, save_fig = False):
+    
     early_stopping = EarlyStopping(patience=ES_patience, min_delta=0)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
@@ -146,19 +147,20 @@ def train(ddt, loss_criterion, inclusion_factors, train_dl, optimizer, val_dl, n
                 print("Early stopping at epoch:", epoch)
                 break
     
-    fig, ax = plt.subplots(figsize = (12, 8))
-    
-    ax.errorbar(range(len(neg_pref_avg_rewards)), neg_pref_avg_rewards, yerr=neg_pref_std_rewards, label='Negative Preference Reward', fmt='-o')
-    ax.errorbar(range(len(pos_pref_avg_rewards)), pos_pref_avg_rewards, yerr=pos_pref_std_rewards, label='Positive Preference Reward', fmt='-o')
-    
-    ax.set_xlabel('Epochs')
-    ax.set_ylabel('Average Reward')
-    ax.set_title('Average Rewards for Positive and Negative Preferences Over Epochs')
-    ax.legend()
-    plt.grid()
-    plt_path = os.path.join(base_model_dir, f"plots/Rewards_Trend_{exp_no}.png")
-    plt.savefig(plt_path, dpi = 300)
-    plt.close(fig)
+    if save_fig:
+        fig, ax = plt.subplots(figsize = (12, 8))
+        
+        ax.errorbar(range(len(neg_pref_avg_rewards)), neg_pref_avg_rewards, yerr=neg_pref_std_rewards, label='Negative Preference Reward', fmt='-o')
+        ax.errorbar(range(len(pos_pref_avg_rewards)), pos_pref_avg_rewards, yerr=pos_pref_std_rewards, label='Positive Preference Reward', fmt='-o')
+        
+        ax.set_xlabel('Epochs')
+        ax.set_ylabel('Average Reward')
+        ax.set_title('Average Rewards for Positive and Negative Preferences Over Epochs')
+        ax.legend()
+        plt.grid()
+        plt_path = os.path.join(base_model_dir, f"plots/Rewards_Trend_{exp_no}.png")
+        plt.savefig(plt_path, dpi = 300)
+        plt.close(fig)
     
     return best_run_val_acc.item(), best_epoch
 
@@ -176,13 +178,13 @@ if __name__== '__main__':
     assert len(pref_demos) == len(pref_labels) == num_prefs
     
     # Your slice indices
-    num_train_prefs= 2000
+    num_train_prefs = 2
     
     train_pref_demos=pref_demos[:num_train_prefs]
     train_pref_labels=pref_labels[:num_train_prefs]
 
-    val_pref_demos=pref_demos[2000:]
-    val_pref_labels=pref_labels[2000:]
+    val_pref_demos=pref_demos[2180:]
+    val_pref_labels=pref_labels[2180:]
 
     train_dataset = TensorDataset(torch.stack(train_pref_demos),torch.tensor(train_pref_labels))
     train_dl = DataLoader(train_dataset, batch_size=1, shuffle=False)
@@ -197,12 +199,12 @@ if __name__== '__main__':
     input_dim = 1 * 2
 
     # Hyperparameters
-    lrs = [1e-4] 
+    lrs = [1e-4, 1e-3, 1e-2] 
     inclusion_factors = {
-        'RSS_factor': [0, 1e6], 
-        'BT_factor': [0], 
-        'OT_factor': [0],
-        'RP_factor': [1e6]
+        'RSS_factor': [0, 1e0, 1e6], 
+        'BT_factor': [0, 1e0, 1e6], 
+        'OT_factor': [0, 1e0, 1e6],
+        'RP_factor': [0, 1e0, 1e6]
     }
     
     reward_strategies = ["hard"] 
@@ -226,37 +228,30 @@ if __name__== '__main__':
     class_reward_vector = [0, 0.25]
     nb_classes = len(class_reward_vector)
     weight_decay=0.0
-    num_epochs = 10#5
+    num_epochs = 5
 
     # --- STEP 1: INITIALIZE DICTIONARY CORRECTLY (14 KEYS) ---
     # We create unique keys for every Loss Type + Reward Strategy combo
     best_acc_dict = {}
-    # NOTE: currently set up to run RP only if other losses are also included
-    loss_types = ["RSS", "OT", "BT", "RSS_OT", "RSS_BT", "OT_BT", "RSS_OT_BT", "RSS_RP", "OT_RP", "BT_RP", "RSS_OT_RP", "RSS_BT_RP", "OT_BT_RP", "RSS_OT_BT_RP"]
-    
-    for l_type in loss_types:
-        for strat in reward_strategies:
-            key_name = f"{l_type}_{strat}" # e.g., RSS_hard
-            best_acc_dict[key_name] = 0.0
 
     print("Tracking the following Model Types:", list(best_acc_dict.keys()))
 
     # --- MAIN LOOP ---
+    loss_criterion = BT_OT_RSS_Loss
     for hyperparameters in hyperparameters_grid:
         
         lr = hyperparameters['lr']
         reward_strat = hyperparameters['reward_strategy']
-        loss_criterion = BT_OT_RSS_Loss
         rss, ot, bt, rp = (hyperparameters['RSS_factor'], hyperparameters['OT_factor'], hyperparameters['BT_factor'], hyperparameters['RP_factor'])
         factors = (rss, ot, bt, rp)
 
-        if rss == 0 and ot == 0 and bt == 0:
+        if rss == 0 and ot == 0 and bt == 0 and rp == 0:
             print("Skipping all-zero factors")
             continue
 
         # Setup Paths
         current_directory = os.getcwd() + '/logic/'
-        base_save_dir = os.path.join(current_directory, 'Reward_Models', 'DDT')
+        base_save_dir = os.path.join(current_directory, 'Reward_Models_Shifted', 'DDT')
         save_model_dir = os.path.join(base_save_dir, 'saved_models')
         save_config_dir = os.path.join(base_save_dir, 'configs')
         
@@ -281,16 +276,16 @@ if __name__== '__main__':
         
         # --- STEP 2: DETERMINE BASE MODEL TYPE ---
         base_type = ""
-        if rss > 0 and ot == 0 and bt == 0: base_type = "RSS"
-        elif rss == 0 and ot > 0 and bt == 0: base_type = "OT"
-        elif rss == 0 and ot == 0 and bt > 0: base_type = "BT"
-        elif rss > 0 and ot > 0 and bt == 0: base_type = "RSS_OT"
-        elif rss > 0 and ot == 0 and bt > 0: base_type = "RSS_BT"
-        elif rss == 0 and ot > 0 and bt > 0: base_type = "OT_BT"
-        elif rss > 0 and ot > 0 and bt > 0: base_type = "RSS_OT_BT"
-        
+        if rss > 0: base_type += "RSS"
+        if ot > 0:
+            if base_type != "": base_type += "_"
+            base_type += "OT"
+        if bt > 0:
+            if base_type != "": base_type += "_"
+            base_type += "BT"
         if rp > 0:
-            base_type += "_RP"
+            if base_type != "": base_type += "_"
+            base_type += "RP"
         
         # --- STEP 3: COMBINE WITH STRATEGY FOR KEY ---
         # This creates keys like "RSS_hard" and "RSS_soft"
@@ -298,7 +293,7 @@ if __name__== '__main__':
         model_key = f"{base_type}_{reward_strat}" 
 
         # --- STEP 4: COMPARE AND FINALIZE SAVE ---
-        if val_acc > best_acc_dict[model_key]:
+        if val_acc > best_acc_dict.get(model_key, 0.0):
             best_acc_dict[model_key] = val_acc
             
             # Prepare Config Data
@@ -312,6 +307,7 @@ if __name__== '__main__':
                 'RSS_factor': rss,
                 'OT_factor': ot,
                 'BT_factor': bt,
+                'RP_factor': rp,
                 'reward_strategy': reward_strat,
                 'best_val_acc': val_acc,
                 'source_exp_name': Exp_name,

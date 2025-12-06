@@ -258,9 +258,9 @@ if __name__=="__main__":
     env=reward_wrapping_env(vec_env,model_path,soft_routing=soft_routing_argmax)
 
     model = PPO("MlpPolicy", env, batch_size=1024, gae_lambda=0.8, gamma=0.98, learning_rate=0.001, 
-                n_epochs=200, n_steps=2048, 
+                n_epochs=20, n_steps=2048, 
                 verbose=1, seed=RL_seed, tensorboard_log=tensorboard_pth)
-    model.learn(total_timesteps=200_000,progress_bar=True)
+    model.learn(total_timesteps=5e5,progress_bar=True)
 
     save_rl_model_dir = save_model_dir + "/model/"
     if not os.path.exists(save_rl_model_dir):
