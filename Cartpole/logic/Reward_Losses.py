@@ -51,7 +51,24 @@ def One_True_Loss(r_theta, target):
 
     return loss
 
-def BT_OT_RSS_Loss(r_theta, target, RSS_factor=1, OT_factor=1, BT_factor=1):
+def sigmoid_shift(x, shift_param = 0, temperature = 1):
+    exp = torch.exp(-1 * (x - shift_param) / temperature)
+    return 1 / (1 + exp)
+
+def Reward_Penalty_Loss(r_theta, target):
+    # logic: isGood(positive) and not isBad(negative)
+    # NLL  : -log( isGood_pos * isBad_neg ) = -log(isGood_pos * (1 - isGood_neg))
+    r_theta, target = r_theta.to("cpu"), target.to("cpu")
+
+    shift_param = 2 # since the smallest reward is 0, we shift by 10 to allow the isGood function to output values close to 0
+    isGood_pos = sigmoid_shift(r_theta[0, target.item()], shift_param)
+    isBad_neg = 1 - sigmoid_shift(r_theta[0, target.item() - 1], shift_param)
+
+    loss = -1 * torch.log(isGood_pos * isBad_neg)
+
+    return loss
+
+def BT_OT_RSS_Loss(r_theta, target, RSS_factor=1, OT_factor=1, BT_factor=1, RP_factor=1):
 
     BT_loss = nn.CrossEntropyLoss()
     BT = BT_loss(r_theta, target).to("cpu")
@@ -59,6 +76,7 @@ def BT_OT_RSS_Loss(r_theta, target, RSS_factor=1, OT_factor=1, BT_factor=1):
     RSS = Richardson_Srikumar_Sabhahwal_Loss(r_theta, target)
 
     OT = One_True_Loss(r_theta, target)
+    RP = Reward_Penalty_Loss(r_theta, target)
 
-    return  (OT_factor * OT) + (RSS_factor * RSS) + (BT_factor * BT)
+    return  (OT_factor * OT) + (RSS_factor * RSS) + (BT_factor * BT) + (RP_factor * RP)
 

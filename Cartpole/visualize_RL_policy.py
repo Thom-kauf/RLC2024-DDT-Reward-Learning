@@ -21,7 +21,7 @@ def visualize_trained_policy(model_name, soft_routing_argmax, rl_seed):
     
     # --- Configuration ---
     # NOTE: These directories must match the saving structure in RL_DDT.py
-    dir = './logic/Reward_Models_3/DDT'
+    dir = './logic/Reward_Models/DDT'
     save_model_dir = dir + f'/RL_Models/{model_name}/'
     save_rl_model_dir = save_model_dir + "/model/"
     

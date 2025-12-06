@@ -1,0 +1,16 @@
+BT_factor: 0
+OT_factor: 1000000.0
+RSS_factor: 0
+best_epoch: 0
+best_val_acc: 100.0
+class_reward_vector:
+- 0
+- 0.25
+depth: 2
+input_dim: 2
+lr: 0.0001
+model_path: /mnt/c/Users/rzack/Desktop/University of Utah/fall_2025/CS6964/RLC2024-DDT-Reward-Learning/cartpole/logic/Reward_Models/DDT/saved_models/BEST_OT_RP_hard_1_train_prefs.pth
+reward_strategy: hard
+seed: 0
+source_exp_name: Strat_hard_RSS_0e+00_OT_1e+06_BT_0e+00_RP_1e+00__LR_1e-04_TrainPrefs_1
+weight_decay: 0.0

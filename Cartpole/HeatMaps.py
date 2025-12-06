@@ -90,8 +90,8 @@ if __name__=="__main__":
 
         # tree= torch.load('Trained_Reward_Models/DDT/saved_models/CP-1_50')
         # tree 
-        dir = './logic/Reward_Models_3/DDT'
-        model_name = 'BEST_RSS_hard'
+        dir = './logic/Reward_Models/DDT'
+        model_name = 'BEST_BT_soft_500_train_prefs'
         model_path = dir + f'/saved_models/{model_name}.pth'
         state_dict = torch.load(model_path, map_location=device)
         tree.load_state_dict(state_dict)

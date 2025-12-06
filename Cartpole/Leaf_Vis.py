@@ -69,8 +69,8 @@ if __name__=="__main__":
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector,seed=0)
-        dir = './logic/Reward_Models_3/DDT'
-        model_name = 'BEST_RSS_hard'
+        dir = './logic/Reward_Models/DDT'
+        model_name = 'BEST_OT_RP_hard_2000_train_prefs'
         model_path = dir + f'/saved_models/{model_name}.pth'
         state_dict = torch.load(model_path, map_location=device)
         tree.load_state_dict(state_dict)
@@ -91,6 +91,9 @@ if __name__=="__main__":
         # current_directory = os.getcwd()
         # save_leaf_dir=  current_directory + '/Reward_Models/DDT/Vis/CP-1/'
         save_leaf_dir=  dir + f'/vis/{model_name}/'
+        if not os.path.exists(save_leaf_dir):
+            os.makedirs(save_leaf_dir)
+        
         print(f"Saving leaf histograms to {save_leaf_dir}")
         n,l=sep_nodes_leaves(node_name,node_p,get_Q)
         print(l)
