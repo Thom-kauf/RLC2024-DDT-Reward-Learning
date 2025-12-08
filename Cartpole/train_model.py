@@ -13,6 +13,8 @@ from Reward_DDT import SoftDecisionTree
 from logic.Reward_Losses import * 
 from matplotlib import pyplot as plt
 import argparse
+import copy
+
 seed=0
 torch.manual_seed(seed)
 random.seed(seed)
@@ -43,7 +45,8 @@ def train(model_key, ddt, loss_criterion, inclusion_factors, train_dl, optimizer
     
     val_losses = []
     val_accuracies = []
-    
+    best_model = None
+
     for epoch in range(num_epochs):
         
         print(f"-----------Epoch {epoch}---------------")
@@ -145,12 +148,7 @@ def train(model_key, ddt, loss_criterion, inclusion_factors, train_dl, optimizer
             if val_acc_per_epoch > best_run_val_acc:
                 best_run_val_acc = val_acc_per_epoch
                 best_epoch = epoch
-                # Ensure directory exists
-                if not os.path.exists(save_model_dir):
-                    os.makedirs(save_model_dir)
-                
-                temp_path = os.path.join(save_model_dir, f"TEMP_{model_key}_EPOCH_{epoch}.pth")
-                torch.save(ddt.state_dict(), temp_path)
+                best_model = copy.deepcopy(ddt)
             # -------------------------------------
     
     if save_fig:
@@ -200,7 +198,7 @@ def train(model_key, ddt, loss_criterion, inclusion_factors, train_dl, optimizer
         fig.savefig(plt_path, dpi = 300)
         plt.close(fig)
     
-    return best_run_val_acc.item(), best_epoch
+    return best_run_val_acc.item(), best_epoch, best_model
 
 if __name__== '__main__':
     
@@ -306,7 +304,7 @@ if __name__== '__main__':
 
     # --- RUN TRAINING ---
     # The function saves a file named "TEMP_{Exp_name}.pth" when it finds a local best
-    val_acc, best_epoch = train(model_key, tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, 
+    val_acc, best_epoch, best_model = train(model_key, tree, loss_criterion, factors, train_dl, optimizer, val_dl, num_epochs=num_epochs, 
                     save_plot_dir=save_plot_dir, save_model_dir=save_model_dir, save_fig=save_figures)
         
     # Prepare Config Data
@@ -331,6 +329,14 @@ if __name__== '__main__':
     final_model_name = f"{model_key}.pth" # e.g. BEST_RSS_hard.pth
     final_model_path = os.path.join(save_model_dir, final_model_name)
     
+    # save the model
+    if not os.path.exists(save_model_dir):
+        os.makedirs(save_model_dir)
+    
+    temp_path = os.path.join(save_model_dir, f"{model_key}_best.pth")
+    torch.save(best_model.state_dict(), temp_path)
+    best_temp_path = temp_path
+
     # 2. Save the Config immediately
     config_filename = f"{model_key}_config.yaml"
     # Create specific subfolder if desired, or dump in main config dir
