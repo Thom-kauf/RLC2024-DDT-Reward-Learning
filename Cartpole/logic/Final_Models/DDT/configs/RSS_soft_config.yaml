@@ -1,0 +1,16 @@
+BT_factor: 0
+OT_factor: 0
+RP_factor: 0
+RSS_factor: 1.0
+best_epoch: 2
+best_val_acc: 59.999996185302734
+class_reward_vector:
+- 0
+- 0.25
+depth: 2
+input_dim: 2
+lr: 0.0001
+num_train_prefs: 2000
+reward_strategy: soft
+seed: 0
+weight_decay: 0.0
