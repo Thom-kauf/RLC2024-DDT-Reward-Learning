@@ -229,12 +229,16 @@ def train(ddt,train_dl, optimizer,val_dl, num_epochs,save_model_dir='.',exp_no=0
 
 
             loss_tree = loss_tree.reshape(len(pref_demo),len(pref_demo[0]), len(pref_demo[0][0]))
+
+            print(f"Loss tree shape: {loss_tree.shape}")
             loss_tree_traj = torch.sum(loss_tree, dim=2)
 
+            print(f"Loss tree shape: {loss_tree.shape}")
 
             pred_label = torch.argmax(loss_tree_traj, dim=1)
             # print(f"pred label is {pred_label} and pref label is {pref_label}")
             acc_counter += torch.sum((pred_label == pref_label).float())
+            print(loss_tree_traj, pref_label)
             final_loss = loss_criterion(loss_tree_traj, pref_label)#, RSS_factor=1e3, BT_factor=1)
 
             # print(f"Pos reward from r_theta is {loss_tree_traj[0, pref_label.item()]} and neg reward is {loss_tree_traj[0, pref_label.item()] - 1}")

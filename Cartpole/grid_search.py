@@ -178,13 +178,13 @@ if __name__== '__main__':
     assert len(pref_demos) == len(pref_labels) == num_prefs
     
     # Your slice indices
-    num_train_prefs = 2
+    num_train_prefs = 2000
     
     train_pref_demos=pref_demos[:num_train_prefs]
     train_pref_labels=pref_labels[:num_train_prefs]
 
-    val_pref_demos=pref_demos[2180:]
-    val_pref_labels=pref_labels[2180:]
+    val_pref_demos=pref_demos[num_train_prefs:]
+    val_pref_labels=pref_labels[num_train_prefs:]
 
     train_dataset = TensorDataset(torch.stack(train_pref_demos),torch.tensor(train_pref_labels))
     train_dl = DataLoader(train_dataset, batch_size=1, shuffle=False)
@@ -201,10 +201,10 @@ if __name__== '__main__':
     # Hyperparameters
     lrs = [1e-4, 1e-3, 1e-2] 
     inclusion_factors = {
-        'RSS_factor': [0, 1e0, 1e6], 
-        'BT_factor': [0, 1e0, 1e6], 
-        'OT_factor': [0, 1e0, 1e6],
-        'RP_factor': [0, 1e0, 1e6]
+        'RSS_factor': [0], 
+        'BT_factor': [0], 
+        'OT_factor': [0],
+        'RP_factor': [0, 1e0, 1e2]
     }
     
     reward_strategies = ["hard"] 

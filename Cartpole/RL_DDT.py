@@ -35,9 +35,10 @@ soft_routing_argmax=int(args.soft_routing_argmax)
 print(f"You are starting RL with setting parameter soft_routing_argmax {soft_routing_argmax} MAKE SURE RESULTS BELOW MATCH INTENDED VALUE")
 
 model_name = args.model_name
-dir = './logic/Reward_Models/DDT'
 # model_name = 'BEST_RSS_hard'
+dir = './logic/Reward_Models_Shifted/DDT'
 model_path = dir + f'/saved_models/{model_name}.pth'
+dir = './logic/Reward_Models_Agents/DDT'
 
 save_model_dir = dir + f'/RL_Models/{model_name}/'
 
