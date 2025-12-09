@@ -23,7 +23,7 @@ register(
 )
 
 parser = argparse.ArgumentParser(description=None)
-parser.add_argument('--soft_routing_argmax',default=1,help="If 0 then it soft routes if it's 1 then it does argmax")
+parser.add_argument('--reward_strategy',default="hard",help="soft or hard")
 parser.add_argument('--RL_seed', default=0, help="RL/PPO seed for experiments")
 # Cartpole/RL_using_Trained_Reward_Models
 parser.add_argument('--model_name', default="", help="which model do you want? RSS, OT, BT etc")
@@ -31,18 +31,25 @@ parser.add_argument('--model_name', default="", help="which model do you want? R
 
 args = parser.parse_args()
 RL_seed = int(args.RL_seed)
-soft_routing_argmax=int(args.soft_routing_argmax)
+
+
+soft_or_hard = args.reward_strategy
+soft_routing_argmax = 0
+if soft_or_hard == "soft":
+    soft_routing_argmax = 0
+else:
+    soft_routing_argmax = 1
+
 print(f"You are starting RL with setting parameter soft_routing_argmax {soft_routing_argmax} MAKE SURE RESULTS BELOW MATCH INTENDED VALUE")
 
 model_name = args.model_name
 # model_name = 'BEST_RSS_hard'
-dir = './logic/Reward_Models_Shifted/DDT'
-model_path = dir + f'/saved_models/{model_name}.pth'
-dir = './logic/Reward_Models_Agents/DDT'
+base_dir = './logic/Final_Models'
+# Cartpole/logic/Final_Models/DDT/saved_models/BT_soft_best.pth
+model_path = base_dir + f'/DDT/saved_models/{model_name}.pth'
 
-save_model_dir = dir + f'/RL_Models/{model_name}/'
+save_model_dir = base_dir + f'/RL_Models/{model_name}/'
 
-tensorboard_pth = save_model_dir + 'tensorboard/'
 
 
 torch.manual_seed(RL_seed)
@@ -260,7 +267,7 @@ if __name__=="__main__":
 
     model = PPO("MlpPolicy", env, batch_size=1024, gae_lambda=0.8, gamma=0.98, learning_rate=0.001, 
                 n_epochs=20, n_steps=2048, 
-                verbose=1, seed=RL_seed, tensorboard_log=tensorboard_pth)
+                verbose=1, seed=RL_seed)
     model.learn(total_timesteps=5e5,progress_bar=True)
 
     save_rl_model_dir = save_model_dir + "/model/"
@@ -269,7 +276,7 @@ if __name__=="__main__":
         os.makedirs(save_rl_model_dir)
 
 
-    model.save(save_rl_model_dir + f"PPO_Cartpole_RL_using_{model_name}_softrouting{soft_routing_argmax}_seed{RL_seed}")
+    model.save(save_rl_model_dir + f"PPO_Cartpole_RL_using_{model_name}_routing_{soft_or_hard}")
 
 
 

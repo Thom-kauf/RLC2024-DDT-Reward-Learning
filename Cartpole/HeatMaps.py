@@ -15,7 +15,14 @@ import matplotlib.pyplot as plt
 from Learnt_DDT_model import Leaf, Node,SoftDecisionTree,get_node_dist_new
 import seaborn as sns
 
+import argparse
 
+
+parser = argparse.ArgumentParser(description=None)
+
+parser.add_argument('--model_type', default="", help="which model do you want? RSS, OT, BT etc")
+args = parser.parse_args()
+model_type = args.model_type
 
 np.set_printoptions(precision=4)
 min_PA_radians=-31
@@ -88,11 +95,10 @@ if __name__=="__main__":
 
         tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector,seed=0)
 
-        # tree= torch.load('Trained_Reward_Models/DDT/saved_models/CP-1_50')
-        # tree 
-        dir = './logic/Reward_Models/DDT'
-        model_name = 'BEST_BT_soft_500_train_prefs'
-        model_path = dir + f'/saved_models/{model_name}.pth'
+        base_dir = './logic/Final_Models/DDT' 
+        
+
+        model_path = base_dir + f'/saved_models/{model_type}.pth'
         state_dict = torch.load(model_path, map_location=device)
         tree.load_state_dict(state_dict)
         tree.eval()
@@ -105,7 +111,8 @@ if __name__=="__main__":
         p0, p1, p2 = node_prob_matrix(tree)
         print(f"dim of the node prob matrix is {p0.shape}")
 
-        save_fig_dir=  dir + f'/vis/{model_name}/'
+        save_fig_dir=  base_dir + f'/plots/{model_type[:-5]}/'
+
         if not os.path.exists(save_fig_dir):
             os.makedirs(save_fig_dir)
 

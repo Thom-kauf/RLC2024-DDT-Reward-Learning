@@ -6,7 +6,14 @@ import numpy as  np
 from Learnt_DDT_model import Leaf, Node,SoftDecisionTree,get_node_dist_new
 import seaborn as sns
 import os
+import argparse
 
+
+parser = argparse.ArgumentParser(description=None)
+
+parser.add_argument('--model_type', default="", help="which model do you want? RSS, OT, BT etc")
+args = parser.parse_args()
+model_type = args.model_type
 
 def sep_nodes_leaves(node_names,node_prob,get_Q):
     # print(node_names)
@@ -69,9 +76,9 @@ if __name__=="__main__":
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         tree = SoftDecisionTree(depth, nb_classes, input_dim, class_reward_vector,seed=0)
-        dir = './logic/Reward_Models/DDT'
-        model_name = 'BEST_OT_RP_hard_2000_train_prefs'
-        model_path = dir + f'/saved_models/{model_name}.pth'
+
+        base_dir = './logic/Final_Models/DDT' 
+        model_path = base_dir + f'/saved_models/{model_type}.pth'
         state_dict = torch.load(model_path, map_location=device)
         tree.load_state_dict(state_dict)
         tree.eval()
@@ -85,12 +92,15 @@ if __name__=="__main__":
         center_allzero = torch.from_numpy(np.asarray((0, 0))).float().reshape(1, 2)
 
         _,node_name, node_p,get_Q = tree.fwd_input_hm(center_allzero)
-        save_leaf_dir=None
+
+        print("\n\nsaving")
 
         '''uncomment to save'''
         # current_directory = os.getcwd()
         # save_leaf_dir=  current_directory + '/Reward_Models/DDT/Vis/CP-1/'
-        save_leaf_dir=  dir + f'/vis/{model_name}/'
+        save_fig_dir=  base_dir + f'/plots/{model_type[:-5]}/'
+        save_leaf_dir = save_fig_dir
+        print(save_fig_dir)
         if not os.path.exists(save_leaf_dir):
             os.makedirs(save_leaf_dir)
         

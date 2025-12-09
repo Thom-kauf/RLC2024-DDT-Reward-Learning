@@ -286,7 +286,7 @@ if __name__== '__main__':
     weight_decay=0.0
 
     # Setup Paths
-    current_directory = os.getcwd() + '/logic/Final_Models/'
+    current_directory = os.getcwd() + '/logic/Final_Models_50_epochs/'
     base_save_dir = os.path.join(current_directory, 'DDT')
     save_model_dir = os.path.join(base_save_dir, 'saved_models')
     save_config_dir = os.path.join(base_save_dir, 'configs')
