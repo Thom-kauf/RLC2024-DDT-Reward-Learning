@@ -31,5 +31,5 @@ IsGood(τ−) → IsGood(τ+)
 
 Relaxing this implication yields a loss similar to RRHF.
 
-See final.pdf for details on math and experiments.
+See [final.pdf](final.pdf) for details on math and experiments.
 
